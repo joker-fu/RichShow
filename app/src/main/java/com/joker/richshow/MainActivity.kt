@@ -1,5 +1,6 @@
 package com.joker.richshow
 
+import android.content.Intent
 import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
 import android.widget.Toast
@@ -33,6 +34,7 @@ class MainActivity : AppCompatActivity() {
         richTextView.setHtml(html)
         richTextView.setOnClickListener {
             Toast.makeText(this, "被点击了", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, RichTestActivity::class.java))
             false
         }
 

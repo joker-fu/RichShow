@@ -1,17 +1,25 @@
 package com.joker.richshow
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 
 /**
  * RichTextView
+ * TAG1: 增加富文本中图片 链接等点击处理
+ *
+ * TAG2: 修复嵌套在滚动布局中WebView高度显示不对问题 尝试了很多办法仅这种有效
+ *       注意富文本必须有h5头，才能使用标准模式获取到高度，否则怪异模式
+ *       WebViewClient做了一定延迟调用JS 等待网页加载完成
+ *       这部分会引起网页滚动失效，所以根据需要加滚动布局 或去掉这部分处理
  *
  * @author  joker
  * @date    2019/1/4
@@ -39,7 +47,8 @@ class RichTextView : WebView {
         @SuppressLint("SetJavaScriptEnabled")
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
-        addJavascriptInterface(PreViewJs(), "PreViewJs")
+        //TAG1 TAG2
+        addJavascriptInterface(RichTextJs(), "RichTextJs")
         setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -54,6 +63,15 @@ class RichTextView : WebView {
                 }
             }
             false
+        }
+        //TAG2
+        webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                view?.postDelayed({
+                    loadUrl("""javascript:RichTextJs.resize(document.body.getBoundingClientRect().height)""")
+                }, 50)
+            }
         }
     }
 
@@ -72,7 +90,12 @@ class RichTextView : WebView {
         fixImg(doc)
         fixA(doc)
         fixEmbed(doc)
-        loadDataWithBaseURL(null, doc.toString(), "text/html", "UTF-8", null)
+        //TAG2
+        val docHtml = """
+            <!DOCTYPE html>
+            ${doc.html()}
+        """
+        loadDataWithBaseURL(null, docHtml, "text/html", "UTF-8", null)
     }
 
     fun getHtml(): String {
@@ -86,8 +109,8 @@ class RichTextView : WebView {
         for (i in 0 until images.size) {
             //宽度最大100%，高度自适应
             images[i].attr("style", "max-width: 100%; height: auto;")
-                    //.attr("onclick", """PreViewJs.onTagClick(this.src, this.getAttribute('data-filename'))""")
-                    .attr("onclick", """PreViewJs.onTagClick(this.src,'富文本图片.jpg')""")
+                    //.attr("onclick", """RichTextJs.onTagClick(this.src, this.getAttribute('data-filename'))""")
+                    .attr("onclick", """RichTextJs.onTagClick(this.src,'富文本图片.jpg')""")
         }
     }
 
@@ -97,7 +120,7 @@ class RichTextView : WebView {
         val `as` = doc.getElementsByTag("a")
         for (i in 0 until `as`.size) {
             val tempA = `as`[i]
-            tempA.attr("onclick", """PreViewJs.onTagClick('${tempA.attr("href")}','LINK')""")
+            tempA.attr("onclick", """RichTextJs.onTagClick('${tempA.attr("href")}','LINK')""")
                     .attr("href", "javascript:void(0)")
                     .attr("style", "word-break: break-word")
         }
@@ -116,14 +139,28 @@ class RichTextView : WebView {
         doc.select("embed").tagName("video")
     }
 
-    private inner class PreViewJs {
+    private inner class RichTextJs {
 
+        //TAG1 js调用 标签点击
         //@JavascriptInterface注解方法，js端调用，4.2以后安全
         //4.2以前，当JS拿到Android这个对象后，就可以调用这个Android对象中所有的方法，包括系统类（java.lang.Runtime 类），从而进行任意代码执行。
         @JavascriptInterface
         fun onTagClick(url: String, info: String) {
-            //TODO 这里可以做你需要的操作
+            //TODO 这里可以做你需要的操作 如用PhotoView查看大图等
             println(url)
+        }
+
+        //TAG2 js调用 重设WebView高度
+        @JavascriptInterface
+        fun resize(height: Int) {
+            if (context is Activity) {
+                (context as Activity).runOnUiThread {
+                    //重设高度
+                    layoutParams = layoutParams.also {
+                        it.height = ((height + 40) * resources.displayMetrics.density + 0.5f).toInt()
+                    }
+                }
+            }
         }
     }
 
